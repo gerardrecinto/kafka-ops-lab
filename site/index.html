@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kafka-ops-lab: partition keys, DLQs, idempotency</title>
+<meta name="description" content="Reproduce a Kafka partition-imbalance investigation, check schema compatibility and watch backpressure pause a consumer, all running the repo code in your browser.">
+<meta property="og:title" content="kafka-ops-lab">
+<meta property="og:description" content="Reproduce a Kafka partition-imbalance investigation, check schema compatibility and watch backpressure pause a consumer, all running the repo code in your browser.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f59e0b'/%3E%3Ccircle cx='16' cy='16' r='6' fill='none' stroke='%23fff' stroke-width='3'/%3E%3C/svg%3E">
+<style>
+
+:root{--bg:#f8fafc;--panel:#fff;--panel2:#f1f5f9;--line:#e2e8f0;--fg:#0f172a;--mute:#475569;--brand:#b45309;--brand-bg:#fef3c7;--ok:#047857;--ok-bg:#d1fae5;--err:#b91c1c;--err-bg:#fee2e2;--code:#0b1220;--code-fg:#e2e8f0}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#070d1a;--panel:#0d1526;--panel2:#111c33;--line:#1e2b47;--fg:#e8eefc;--mute:#9fb0cc;--brand:#fbbf24;--brand-bg:#3a2a07;--ok:#34d399;--ok-bg:#06382b;--err:#fca5a5;--err-bg:#3b1212}}
+:root[data-theme=dark]{--bg:#070d1a;--panel:#0d1526;--panel2:#111c33;--line:#1e2b47;--fg:#e8eefc;--mute:#9fb0cc;--brand:#fbbf24;--brand-bg:#3a2a07;--ok:#34d399;--ok-bg:#06382b;--err:#fca5a5;--err-bg:#3b1212}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--brand)}
+code,pre,textarea,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.wrap{max-width:1080px;margin:0 auto;padding:0 16px}
+nav{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;justify-content:space-between;height:56px;gap:12px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--fg);text-decoration:none}
+.logo i{width:22px;height:22px;border-radius:6px;background:#f59e0b;display:inline-block}
+nav .links{display:flex;gap:18px;align-items:center;font-size:14px}
+nav .links a{color:var(--mute);text-decoration:none}
+nav .links a:hover{color:var(--fg)}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:10px;font-weight:600;text-decoration:none;border:1px solid var(--line);color:var(--fg);background:var(--panel);cursor:pointer;font-size:15px}
+.btn.primary{background:#f59e0b;border-color:#f59e0b;color:#2b1a00}
+.btn.primary:hover{background:#fbbf24}
+.btn:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid #f59e0b;outline-offset:2px}
+.hero{padding:72px 0 40px;text-align:center}
+.pill{display:inline-block;font-size:13px;color:var(--brand);background:var(--brand-bg);padding:4px 12px;border-radius:99px;margin-bottom:20px;font-weight:600}
+h1{font-size:clamp(34px,6vw,58px);line-height:1.08;margin:0 0 18px;letter-spacing:-.02em}
+h1 em{font-style:normal;color:var(--brand)}
+.lede{max-width:700px;margin:0 auto 28px;color:var(--mute);font-size:18px}
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.stats{display:flex;gap:28px;justify-content:center;flex-wrap:wrap;margin-top:36px;color:var(--mute);font-size:14px}
+.stats b{display:block;color:var(--fg);font-size:22px}
+section{padding:56px 0}
+h2{font-size:clamp(26px,4vw,36px);margin:0 0 8px;letter-spacing:-.01em}
+.sub{color:var(--mute);margin:0 0 28px;max-width:720px}
+.lab{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media (max-width:860px){.lab{grid-template-columns:minmax(0,1fr)}nav .links .hide-s{display:none}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;min-width:0}
+.card h3{margin:0;padding:12px 16px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.tools{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font:600 12px system-ui;padding:5px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);cursor:pointer;text-transform:none;letter-spacing:0}
+.chip[aria-pressed=true]{background:var(--brand-bg);border-color:var(--brand);color:var(--brand)}
+#log{display:block;width:100%;height:420px;border:0;padding:12px 14px;font-size:12.5px;line-height:1.55;background:var(--code);color:var(--code-fg);resize:vertical;white-space:pre;overflow:auto}
+.src{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--line);font-size:13px;color:var(--mute);flex-wrap:wrap}
+.out{min-height:420px}
+.status{padding:16px;color:var(--mute);font-size:14px}
+.verdict{padding:18px 16px;border-bottom:1px solid var(--line);background:var(--err-bg)}
+.verdict.unknown{background:var(--panel2)}
+.verdict b{display:block;font-size:20px;text-transform:uppercase;letter-spacing:.04em;color:var(--err)}
+.verdict.unknown b{color:var(--mute)}
+.verdict span{font-size:14px;color:var(--mute)}
+.sec{padding:14px 16px;border-bottom:1px solid var(--line)}
+.sec:last-child{border-bottom:0}
+.sec h4{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}
+.bar{height:10px;border-radius:99px;background:var(--panel2);overflow:hidden;max-width:260px;display:inline-block;vertical-align:middle;margin-right:10px;width:60%}
+.bar i{display:block;height:100%;background:#f59e0b}
+.site{padding:8px 0;border-bottom:1px dashed var(--line);font-size:13.5px}
+.site:last-child{border:0}
+.site code{background:var(--panel2);padding:1px 6px;border-radius:5px;font-size:12px}
+.fix{background:var(--ok-bg);color:var(--ok);padding:10px 12px;border-radius:8px;font-size:14px}
+.note{font-size:13px;color:var(--mute);margin-top:12px}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media (max-width:860px){.steps{grid-template-columns:minmax(0,1fr)}}
+.step{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px}
+.step .n{width:28px;height:28px;border-radius:8px;background:var(--brand-bg);color:var(--brand);display:grid;place-items:center;font-weight:700;margin-bottom:10px}
+.step h3{margin:0 0 6px;font-size:17px}
+.step p{margin:0;color:var(--mute);font-size:15px}
+.tw{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow-x:auto;max-width:100%}
+table{width:100%;min-width:560px;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);background:var(--panel2)}
+tr:last-child td{border-bottom:0}
+td:first-child{font-family:ui-monospace,monospace;font-weight:700;white-space:nowrap}
+.install pre{background:var(--code);color:var(--code-fg);padding:16px;border-radius:12px;overflow-x:auto;font-size:13.5px;margin:0 0 12px}
+.cols2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media (max-width:860px){.cols2{grid-template-columns:minmax(0,1fr)}}
+.limits{background:var(--panel);border:1px solid var(--line);border-left:4px solid #f59e0b;border-radius:10px;padding:16px 20px}
+.limits ul{margin:8px 0 0;padding-left:20px;color:var(--mute)}
+footer{border-top:1px solid var(--line);padding:32px 0;color:var(--mute);font-size:14px}
+footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+.inc{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:12px;padding:16px 18px;min-width:0}
+.inc h3{margin:0 0 6px;font-size:16px}
+.inc p{margin:0 0 8px;color:var(--mute);font-size:14.5px}
+.inc pre{margin:8px 0 0;background:var(--code);color:var(--code-fg);padding:10px 12px;border-radius:8px;font-size:12px;overflow-x:auto}
+.incs{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+pre.term{margin:0;background:var(--code);color:var(--code-fg);padding:14px 16px;font-size:12.5px;line-height:1.55;overflow-x:auto;white-space:pre}
+.term .hl{color:#fbbf24}
+.term .ok{color:#34d399}
+.term .bad{color:#f87171}
+.term .dim{color:#64748b}
+.player{display:flex;gap:8px;flex-wrap:wrap;padding:12px 14px;border-top:1px solid var(--line);align-items:center}
+.cap{font-size:13px;color:var(--mute);padding:10px 16px;border-top:1px solid var(--line);min-height:44px}
+.sim{display:inline-block;font:700 11px ui-monospace,monospace;color:var(--brand);background:var(--brand-bg);padding:2px 8px;border-radius:6px}
+.real{display:inline-block;font:700 11px ui-monospace,monospace;color:var(--ok);background:var(--ok-bg);padding:2px 8px;border-radius:6px}
+.note code,.sub code,.cap code{overflow-wrap:anywhere}
+.tcat{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px;padding:14px}
+.tcat div{border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;background:var(--panel2);min-width:0}
+.tcat b{font-family:ui-monospace,monospace;font-size:12px;word-break:break-all;display:block}
+.tcat span{color:var(--mute)}
+.ctrl{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 14px;border-top:1px solid var(--line)}
+.ctrl label{font-size:13px;color:var(--mute)}
+.ctrl select,.ctrl input[type=number],.ctrl input[type=text]{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px}
+.ctrl input[type=number]{width:72px}
+.bars{padding:14px 16px;display:grid;gap:6px}
+.bar{display:grid;grid-template-columns:90px 1fr 56px;gap:8px;align-items:center;font:12px ui-monospace,monospace}
+.bar i{display:block;height:14px;border-radius:4px;background:var(--brand);min-width:2px}
+.bar i.zero{background:var(--err);opacity:.35;width:100%}
+.ta{display:block;width:100%;border:0;padding:12px 14px;font-size:12.5px;line-height:1.55;background:var(--code);color:var(--code-fg);resize:vertical;white-space:pre;overflow:auto;font-family:ui-monospace,monospace;height:150px}
+.lbl{display:block;padding:8px 14px;font-size:12px;color:var(--mute);background:var(--panel2);border-bottom:1px solid var(--line);border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<nav><div class="wrap">
+  <a class="logo" href="#top"><i></i>kafka-ops-lab</a>
+  <div class="links"><a href="#try" class="hide-s">Try it</a><a href="#install" class="hide-s">Install</a><a class="btn" href="https://github.com/gerardrecinto/kafka-ops-lab">GitHub</a></div>
+</div></nav>
+
+<header class="hero" id="top"><div class="wrap">
+  <h1>Pick the wrong Kafka key and <em>half your partitions sit empty</em>.</h1>
+  <p class="lede">A Kafka event pipeline built as a lab: partition design, idempotent consumers with a Redis fast path over a Postgres source of truth, retry and dead-letter topics, schema checks and lag monitoring. The imbalance investigation runs here.</p>
+  <div class="cta"><a class="btn primary" href="#try">Try the key lab</a><a class="btn" href="#install">Run the lab</a></div>
+  <div class="stats"><div><b>2</b>partition key strategies compared</div><div><b id="tc2">19</b>tests against live services</div><div><b>0</b>brokers needed for this page</div></div>
+</div></header>
+
+
+<section id="try"><div class="wrap">
+  <h2>Why a bad partition key wastes half your consumers</h2>
+  <p class="sub">This runs the repo's real event generator and its real imbalance metric. The only added piece is Kafka's default partitioner hash (murmur2), written out in the page glue so no broker is needed. Defaults reproduce the repo's README table exactly.</p>
+  <div class="lab">
+    <div class="card"><h3><span>Key lab <span class="real">REAL CODE</span></span></h3>
+      <div class="bars" id="bars"><div class="status" id="boot">Loading the pipeline code (about 12 MB the first time, cached after)...</div></div>
+      <div class="ctrl">
+        <label for="strat">partition key</label>
+        <select id="strat"><option value="service">service (20 values)</option><option value="environment">environment (3 values)</option></select>
+        <label for="np">partitions</label><input id="np" type="number" min="1" max="24" value="6">
+        <label for="ne">events</label><input id="ne" type="number" min="10" max="20000" value="1000">
+        <label for="seed">seed</label><input id="seed" type="number" value="1">
+      </div>
+      <div class="cap" id="keycap"></div>
+    </div>
+    <div class="card"><h3><span>Backpressure <span class="real">REAL CODE</span></span></h3>
+      <label class="lbl" for="lat">Per-message sink latency in ms, one per message</label>
+      <textarea class="ta" id="lat" spellcheck="false" style="height:90px">40, 55, 60, 310, 45, 50, 48, 52, 61, 44, 390, 42, 50, 47, 49, 51</textarea>
+      <div class="ctrl"><label for="thr">pause above (ms)</label><input id="thr" type="number" value="200"><label for="cool">cooldown (messages)</label><input id="cool" type="number" value="5"></div>
+      <pre class="term" id="bp" aria-live="polite"></pre>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px"><h3><span>Schema compatibility <span class="real">REAL CODE</span></span>
+    <span class="tools"><label class="sr" for="chg">Change to the event schema</label>
+    <select id="chg" class="chip"><option value="v11">v1.0 to v1.1 (the repo's real change)</option><option value="req">add a required field</option><option value="drop">remove a required field</option><option value="type">change a field's type</option></select></span></h3>
+    <pre class="term" id="compat" aria-live="polite"></pre>
+  </div>
+  <p class="note">The imbalance numbers in the repo README came from a real local broker. This page reproduces them from the same generator and hash, but it is not talking to a broker. Schema and backpressure results come straight from the repo functions.</p>
+</div></section>
+
+<section><div class="wrap">
+  <h2>The pipeline</h2>
+  <p class="sub">The architecture from the README, one message at a time. Each exit is a separate topic so poison and retry traffic never compete with the main stream.</p>
+  <div class="card"><pre class="term">producer  (key: service or environment)
+   |
+   v
+deploy-events  (6 partitions)
+   |
+   v   consumer group
+   +-- schema validation ----- invalid ----------&gt; deploy-events-dlq   (poison, never retried)
+   +-- Redis dedup fast-path - already seen -----&gt; skip write, commit offset
+   +-- Postgres upsert ON CONFLICT DO NOTHING     source of truth for idempotency
+   +-- transient failure ----&gt; deploy-events-retry (retry_count header)
+   |                              retry_count &gt; 3 -&gt; deploy-events-dlq
+   +-- backpressure: slow sink -&gt; consumer.pause() for a cooldown window</pre></div>
+  <p class="note">If Redis is wiped, correctness holds: every message just costs one extra Postgres round trip to find it already exists.</p>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Tests <span id="tcount" class="cnt"></span></h2>
+  <p class="sub">Read from the repo's test files on every deploy. They run against a real local Kafka broker, Postgres and Redis.</p>
+  <div class="card"><div class="tcat" id="tcat"><div>Loading...</div></div></div>
+</div></section>
+
+<section id="install" class="install"><div class="wrap">
+  <h2>Run it yourself</h2>
+  <p class="sub">Docker, Python 3.12.</p>
+  <div class="cols2">
+    <div>
+<pre>docker compose up -d      # Kafka (KRaft), Postgres, Redis
+python3.12 -m venv .venv &amp;&amp; . .venv/bin/activate
+pip install -r requirements.txt &amp;&amp; pip install -e .
+
+python -m kafka_ops_lab.admin
+python scripts/smoke_test.py</pre>
+    </div>
+    <div>
+<pre>python scripts/investigate_imbalance.py
+python -m pytest tests/ -v</pre>
+      <p class="note">Single local broker, replication factor 1. A production setup would use 3.</p>
+    </div>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="limits"><strong>What this does not do</strong><ul>
+    <li>It is a lab on one local broker. It makes no claim about production throughput.</li>
+    <li>The schema checker is a small stand-in for a real schema registry such as Confluent or AWS Glue.</li>
+    <li>Backpressure is a threshold and a fixed cooldown, not an adaptive controller.</li>
+    <li>This page cannot show lag monitoring, the retry topics or the Postgres sink, because they need the running services.</li>
+  </ul></div>
+</div></section>
+
+
+<footer><div class="wrap">
+  <span>kafka-ops-lab. Built by <a href="https://github.com/gerardrecinto">Gerard Recinto</a>.</span>
+  <span><a href="https://github.com/gerardrecinto/kafka-ops-lab">Source</a> &middot; <a href="https://github.com/gerardrecinto/kafka-ops-lab/releases">Releases</a></span>
+</div></footer>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+
+(() => {
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const track = (n) => { try { if (window.plausible) window.plausible(n); } catch (e) {} };
+
+  function renderTests(el, countEl, tests) {
+    if (countEl) countEl.textContent = "(" + tests.length + ")"; if ($("tc2")) $("tc2").textContent = tests.length;
+    const by = {}; tests.forEach((t) => (by[t.file] = by[t.file] || []).push(t));
+    el.innerHTML = Object.entries(by).map(([f, ts]) => `<div><b>${esc(f)} (${ts.length})</b>${ts.map((t) => `<span>${esc(t.name.replace(/^test_/, "").replace(/_/g, " "))}</span><br>`).join("")}</div>`).join("");
+  }
+
+  const FILES = ["__init__.py", "schema/__init__.py", "schema/deploy_event.py", "schema/compatibility.py", "consumer/__init__.py", "consumer/backpressure.py", "monitoring/__init__.py", "monitoring/partition_stats.py", "producer/__init__.py", "producer/deploy_producer.py"];
+  let py = null;
+  const PY = `
+import json, sys, types, random
+if "kafka" not in sys.modules:
+    k = types.ModuleType("kafka")
+    k.KafkaProducer = object; k.KafkaConsumer = object; k.TopicPartition = object
+    sys.modules["kafka"] = k
+from kafka_ops_lab.producer.deploy_producer import generate_event, key_for
+from kafka_ops_lab.monitoring.partition_stats import imbalance_pct_above_mean
+from kafka_ops_lab.consumer.backpressure import BackpressureController
+from kafka_ops_lab.schema.deploy_event import DeployEvent, DeployEventV1_0
+from kafka_ops_lab.schema.compatibility import check_backward_compatibility
+from pydantic import BaseModel, create_model
+from typing import Literal
+
+def murmur2(data):
+    length = len(data); seed = 0x9747b28c; m = 0x5bd1e995; r = 24
+    h = (seed ^ length) & 0xffffffff
+    for i in range(length // 4):
+        i4 = i * 4
+        k = data[i4] + (data[i4+1] << 8) + (data[i4+2] << 16) + (data[i4+3] << 24)
+        k = (k * m) & 0xffffffff; k ^= k >> r; k = (k * m) & 0xffffffff
+        h = (h * m) & 0xffffffff; h ^= k
+    rem = length % 4; off = length - rem
+    if rem == 3: h ^= data[off+2] << 16
+    if rem >= 2: h ^= data[off+1] << 8
+    if rem >= 1:
+        h ^= data[off]; h = (h * m) & 0xffffffff
+    h ^= h >> 13; h = (h * m) & 0xffffffff; h ^= h >> 15
+    return h
+
+def keylab(strategy, partitions, n, seed):
+    rng = random.Random(seed)
+    counts = {p: 0 for p in range(partitions)}
+    for _ in range(n):
+        e = generate_event(rng)
+        counts[(murmur2(key_for(e, strategy).encode()) & 0x7fffffff) % partitions] += 1
+    return json.dumps({"counts": counts, "imb": imbalance_pct_above_mean(counts), "empty": sum(1 for v in counts.values() if v == 0)})
+
+def backpressure(lat, thr, cool):
+    c = BackpressureController(latency_threshold_ms=float(thr), cooldown_batches=int(cool))
+    return json.dumps([[l, c.record_latency(l)] for l in lat])
+
+def compat(kind):
+    old = DeployEventV1_0
+    if kind == "v11":
+        new = DeployEvent
+    elif kind == "req":
+        new = create_model("New", __base__=DeployEventV1_0, region=(str, ...))
+    elif kind == "drop":
+        fields = {n: (f.annotation, f) for n, f in DeployEventV1_0.model_fields.items() if n != "released_by"}
+        new = create_model("New", **fields)
+    else:
+        fields = {n: (f.annotation, f) for n, f in DeployEventV1_0.model_fields.items() if n != "occurred_at"}
+        fields["occurred_at"] = (int, ...)
+        new = create_model("New", **fields)
+    r = check_backward_compatibility(old, new)
+    return json.dumps({"ok": r.compatible, "removed": r.removed_required_fields, "added": r.newly_required_fields, "types": r.type_changed_fields})
+`;
+  function drawKeys() {
+    if (!py) return;
+    let r;
+    try { py.globals.set("_s", $("strat").value); r = JSON.parse(py.runPython(`keylab(_s, ${+$("np").value || 6}, ${+$("ne").value || 1000}, ${+$("seed").value || 0})`)); }
+    catch (e) { $("bars").innerHTML = '<div class="status" style="color:var(--err)">' + esc(String(e.message || e).split("\n").pop()) + "</div>"; return; }
+    const max = Math.max(1, ...Object.values(r.counts));
+    $("bars").innerHTML = Object.entries(r.counts).map(([p, c]) => `<div class="bar"><span>partition ${p}</span>${c ? `<i style="width:${(c / max) * 100}%"></i>` : '<i class="zero"></i>'}<span>${c}</span></div>`).join("");
+    const def = +$("np").value === 6 && +$("ne").value === 1000 && +$("seed").value === 1;
+    $("keycap").innerHTML = `Imbalance (busiest partition above the mean): <b>${r.imb.toFixed(1)}%</b>. Empty partitions: <b>${r.empty} of ${Object.keys(r.counts).length}</b>.` + (def ? ` The repo README, measured on a real broker, reports ${$("strat").value === "service" ? "79.4% and 0" : "104.0% and 3"} for this key.` : " Set partitions 6, events 1000, seed 1 to compare with the README table.");
+  }
+  function drawBp() {
+    if (!py) return;
+    try {
+      const lat = $("lat").value.split(/[,\s]+/).filter(Boolean).map(Number);
+      if (!lat.length || lat.some((x) => !isFinite(x))) throw new Error("Enter numbers separated by commas.");
+      py.globals.set("_l", py.toPy(lat));
+      const r = JSON.parse(py.runPython(`backpressure(list(_l), ${+$("thr").value}, ${+$("cool").value})`));
+      $("bp").innerHTML = r.map(([l, p], i) => `<span class="dim">msg ${String(i + 1).padStart(2)}</span>  ${String(l).padStart(5)} ms  ${p ? '<span class="bad">PAUSED</span>' : '<span class="ok">consuming</span>'}`).join("\n");
+    } catch (e) { $("bp").textContent = String(e.message || e).split("\n").pop(); }
+  }
+  function drawCompat() {
+    if (!py) return;
+    const r = JSON.parse(py.runPython(`compat(${JSON.stringify($("chg").value)})`));
+    const lines = [`<span class="${r.ok ? "ok" : "bad"}">${r.ok ? "BACKWARD COMPATIBLE" : "NOT BACKWARD COMPATIBLE"}</span>  a consumer on the new schema ${r.ok ? "can still read" : "cannot safely read"} messages written under v1.0`];
+    if (r.added.length) lines.push("newly required fields: " + r.added.join(", ") + "  (old messages do not have them)");
+    if (r.removed.length) lines.push("removed required fields: " + r.removed.join(", "));
+    if (r.types.length) lines.push("type changed: " + r.types.join(", "));
+    $("compat").innerHTML = lines.join("\n");
+  }
+  ["strat", "np", "ne", "seed"].forEach((id) => $(id).addEventListener("input", () => { drawKeys(); track("kf_keylab"); }));
+  ["lat", "thr", "cool"].forEach((id) => $(id).addEventListener("input", drawBp));
+  $("chg").addEventListener("change", () => { drawCompat(); track("kf_compat"); });
+  fetch("tests.json").then((r) => r.json()).then((t) => renderTests($("tcat"), $("tcount"), t)).catch(() => { $("tcat").innerHTML = "<div>The test list did not load.</div>"; });
+
+  (async () => {
+    try {
+      py = await loadPyodide();
+      await py.loadPackage("pydantic");
+      for (const d of ["schema", "consumer", "monitoring", "producer"]) py.FS.mkdirTree("/lib/kafka_ops_lab/" + d);
+      await Promise.all(FILES.map(async (f) => { const r = await fetch("py/" + f); if (!r.ok) throw new Error("could not load " + f); py.FS.writeFile("/lib/kafka_ops_lab/" + f, await r.text()); }));
+      py.runPython("import sys; sys.path.insert(0, '/lib')");
+      py.runPython(PY);
+      window.__KF_READY__ = true; drawKeys(); drawBp(); drawCompat();
+    } catch (e) { $("bars").innerHTML = '<div class="status">The in-browser code did not load (' + esc(String(e.message || e).split("\n").pop()) + "). The commands below run the same code locally.</div>"; }
+  })();
+})();
+
+</script>
+</body>
+</html>
