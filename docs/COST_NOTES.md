@@ -28,6 +28,6 @@ testing it.
 No production Kafka cluster sizing, MSK/Confluent Cloud pricing
 comparison, or throughput-to-instance-count sizing exercise is included
 here — that would need real production traffic numbers this project
-doesn't have. If asked in an interview: this project demonstrates the
+doesn't have. This project demonstrates the
 architectural patterns; sizing a real cluster is a separate exercise that
 depends on actual event volume and retention requirements.

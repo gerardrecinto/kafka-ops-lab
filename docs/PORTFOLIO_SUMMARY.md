@@ -14,7 +14,7 @@ generalizes that experience into a reproducible demonstration — the
 specific data and numbers here are from this lab, not a re-creation of
 the original incident.
 
-## Resume bullets (accurate language only)
+## What was built
 
 - Built a Kafka event-processing pipeline with idempotent consumption
   (Redis fast-path over a Postgres source of truth), topic-based
@@ -33,7 +33,7 @@ events/day in production" — none of these are true for this lab; all
 numbers in this repo are from local runs against synthetic data, labeled
 as such in the README.
 
-## Interview talking points
+## Design notes
 
 **"Walk me through the imbalance investigation."**
 Same producer, same event data, same partition count, one variable
